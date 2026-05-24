@@ -1,0 +1,26 @@
+{
+  "name": "lmstudio-proxy",
+  "version": "1.0.0",
+  "description": "Dockerized LMStudio proxy with configurable ports and web admin UI",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "lmstudio",
+    "proxy",
+    "docker",
+    "vision",
+    "base64",
+    "cline"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.2",
+    "http-proxy-middleware": "^3.0.3",
+    "sharp": "^0.33.5"
+  }
+}

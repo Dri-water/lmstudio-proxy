@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LMStudio Proxy</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #0f1117;
+      --panel: #171b24;
+      --border: #2a3140;
+      --text: #e8ecf4;
+      --muted: #9aa4b8;
+      --accent: #5b8def;
+      --accent-hover: #4a7de0;
+      --success: #3ecf8e;
+      --warn: #f0b429;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at top, #1a2233, var(--bg));
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(520px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+    }
+    .subtitle {
+      color: var(--muted);
+      margin: 0 0 24px;
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 10px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0d1017;
+      color: var(--text);
+      font-size: 0.95rem;
+      margin-bottom: 16px;
+    }
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .row input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { background: var(--accent-hover); }
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      display: none;
+    }
+    .status.ok {
+      display: block;
+      background: rgba(62, 207, 142, 0.12);
+      border: 1px solid rgba(62, 207, 142, 0.35);
+      color: var(--success);
+    }
+    .status.warn {
+      display: block;
+      background: rgba(240, 180, 41, 0.12);
+      border: 1px solid rgba(240, 180, 41, 0.35);
+      color: var(--warn);
+    }
+    .status.error {
+      display: block;
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #f87171;
+    }
+    .hint {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+    code {
+      background: #0d1017;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>LMStudio Proxy</h1>
+    <p class="subtitle">
+      Configure the proxy that sits between Cline, KiloCode, and LMStudio.
+      Point your AI tool at the proxy port instead of LMStudio directly.
+    </p>
+
+    <form id="config-form">
+      <label for="proxyPort">Proxy port (listen)</label>
+      <input type="number" id="proxyPort" name="proxyPort" min="1" max="65535" required>
+
+      <label for="targetUrl">LMStudio target URL</label>
+      <input type="text" id="targetUrl" name="targetUrl" placeholder="http://host.docker.internal:1234" required>
+
+      <label for="adminPort">Admin UI port</label>
+      <input type="number" id="adminPort" name="adminPort" min="1" max="65535" required>
+
+      <div class="row">
+        <input type="checkbox" id="debug" name="debug">
+        <label for="debug" style="margin:0;color:var(--text)">Enable debug logging</label>
+      </div>
+
+      <button type="submit">Save settings</button>
+    </form>
+
+    <div id="status" class="status"></div>
+
+    <div class="hint">
+      <strong>Usage:</strong> Set your AI assistant base URL to
+      <code>http://localhost:&lt;proxy-port&gt;</code> (default <code>1235</code>).
+      LMStudio stays on <code>1234</code>. Port changes require a container restart.
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('config-form');
+    const statusEl = document.getElementById('status');
+
+    function showStatus(message, type) {
+      statusEl.textContent = message;
+      statusEl.className = 'status ' + type;
+    }
+
+    async function loadConfig() {
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      form.proxyPort.value = cfg.proxyPort;
+      form.targetUrl.value = cfg.targetUrl;
+      form.adminPort.value = cfg.adminPort;
+      form.debug.checked = cfg.debug;
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      showStatus('Saving...', 'ok');
+
+      const body = {
+        proxyPort: Number(form.proxyPort.value),
+        adminPort: Number(form.adminPort.value),
+        targetUrl: form.targetUrl.value.trim(),
+        debug: form.debug.checked,
+      };
+
+      try {
+        const res = await fetch('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Save failed');
+        showStatus(data.message, data.restartRequired ? 'warn' : 'ok');
+      } catch (err) {
+        showStatus(err.message, 'error');
+      }
+    });
+
+    loadConfig().catch((err) => showStatus('Failed to load config: ' + err.message, 'error'));
+  </script>
+</body>
+</html>
