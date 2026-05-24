@@ -32,9 +32,14 @@ export function resolveHostImagePath(imagePath) {
     return `${hostTemp}/${winTempFwd[1]}`;
   }
 
-  // Unix /tmp/foo.png when host temp is mounted
+  // Unix /tmp/foo.png — devcontainer screenshots (shared volume) or host temp
   if (path.startsWith('/tmp/')) {
-    return `${hostTemp}/${path.slice(5)}`;
+    const rel = path.slice(5);
+    const containerTemp = process.env.CONTAINER_TEMP_MOUNT;
+    if (containerTemp) {
+      return `${containerTemp}/${rel}`;
+    }
+    return `${hostTemp}/${rel}`;
   }
 
   return imagePath;

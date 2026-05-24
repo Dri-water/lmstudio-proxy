@@ -8,19 +8,28 @@ services:
       - "${ADMIN_PORT:-8090}:8090"
     volumes:
       - proxy-data:/data
-      # Cline/KiloCode save screenshots to the host temp dir — mount it read-only
+      # Host temp (Windows: Cline on host). Devcontainer uses cline-screenshots volume instead.
       - ${TEMP:-/tmp}:/host-temp:ro
+      - cline-screenshots:/container-screenshots:ro
     environment:
-      # Fixed listen ports inside the container (must match the right side above)
       PROXY_PORT: "1235"
       ADMIN_PORT: "8090"
       LMSTUDIO_URL: ${LMSTUDIO_URL:-http://localhost:1234}
       DEBUG: ${DEBUG:-false}
       DOCKER: "true"
       HOST_TEMP_MOUNT: /host-temp
+      CONTAINER_TEMP_MOUNT: /container-screenshots
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    networks:
+      - lmstudio-proxy
+
+networks:
+  lmstudio-proxy:
+    name: lmstudio-proxy
 
 volumes:
   proxy-data:
+  cline-screenshots:
+    name: cline-screenshots

@@ -48,6 +48,26 @@ http://localhost:1235
 
 LM Studio itself stays on port `1234`. The proxy listens on `1235` (LM Studio + 1) and forwards requests after fixing images.
 
+### Cline in a devcontainer
+
+**Do not use `http://host.docker.internal:1235`** — on many setups (including Docker Desktop on Windows), other containers cannot reach published host ports that way. Requests never hit the proxy, so LM Studio never loads a model.
+
+Instead:
+
+1. Start the proxy on the host: `docker compose up -d`
+2. Join your devcontainer to the `lmstudio-proxy` network and shared screenshot volume — see [devcontainer.example.json](devcontainer.example.json)
+3. Point Cline at **`http://lmstudio-proxy:1235`** (the container name on the shared network)
+
+For an **already running** devcontainer:
+
+```bash
+docker network connect lmstudio-proxy <your-devcontainer-name>
+```
+
+Then set Cline base URL to `http://lmstudio-proxy:1235` and restart the Cline panel.
+
+**Note:** LM Studio only loads a model into memory when a `chat/completions` request arrives — listing models or a failed connection will not show a loaded model.
+
 ## Configuration
 
 ### Environment variables
@@ -178,6 +198,13 @@ PROXY_PORT=1236 docker compose up -d
 1. Confirm your AI tool points to `http://localhost:1235`, not `:1234`
 2. Enable debug logging in the admin UI or set `DEBUG=true`
 3. Check logs: `docker compose logs -f`
+
+**Cline in devcontainer — model never loads**
+
+1. Use `http://lmstudio-proxy:1235`, not `host.docker.internal:1235` (see devcontainer section above)
+2. Run `docker network connect lmstudio-proxy <devcontainer-name>` if you didn't set `runArgs` at build time
+3. Enable debug in admin UI and watch `docker compose logs -f` — you should see requests when Cline sends a message
+4. LM Studio only loads the model when a chat request succeeds — check the LM Studio server tab for incoming requests
 
 **Can't reach LM Studio from container**
 

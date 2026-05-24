@@ -1,0 +1,26 @@
+// Add these settings to your project's .devcontainer/devcontainer.json
+// when Cline runs inside a devcontainer and LM Studio + this proxy run on the host.
+{
+  "name": "My Project (Cline + LM Studio)",
+
+  "runArgs": [
+    // Join the same Docker network as lmstudio-proxy (do NOT use host.docker.internal:1235 — it often fails)
+    "--network=lmstudio-proxy"
+  ],
+
+  "mounts": [
+    // Share /tmp with the proxy so Cline screenshot file paths are readable
+    "source=cline-screenshots,target=/tmp,type=volume"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        // Cline OpenAI-compatible base URL — use the container name, not host.docker.internal
+        "cline.apiProvider": "openai",
+        "cline.openAiBaseUrl": "http://lmstudio-proxy:1235",
+        "cline.openAiModelId": "your-model-id-here"
+      }
+    }
+  }
+}
