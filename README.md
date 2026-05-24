@@ -25,7 +25,7 @@ This proxy intercepts `/v1/chat/completions` requests, transforms images in-plac
 **Requirements:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine + Compose)
 
 ```bash
-git clone https://github.com/Dri_water/lmstudio-proxy.git
+git clone https://github.com/Dri-water/lmstudio-proxy.git
 cd lmstudio-proxy
 docker compose up -d --build
 ```
@@ -170,7 +170,7 @@ Ensure LM Studio is running on the host and `LMSTUDIO_URL` is set to `http://hos
 ## Credits
 
 - Original VSCode extension: [amitrathiesh/lmstudio-proxy](https://github.com/amitrathiesh/lmstudio-proxy) by Amit Rathiesh
-- Docker rewrite: [Dri_water/lmstudio-proxy](https://github.com/Dri_water/lmstudio-proxy)
+- Docker rewrite: [Dri-water/lmstudio-proxy](https://github.com/Dri-water/lmstudio-proxy)
 
 ## License
 
