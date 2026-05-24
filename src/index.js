@@ -1,6 +1,7 @@
 import { loadConfig, getConfig } from './config.js';
 import { createProxyApp } from './proxy-server.js';
 import { createAdminApp } from './admin-server.js';
+import { resolveTargetUrl } from './target-url.js';
 
 let proxyServer = null;
 let adminServer = null;
@@ -12,7 +13,7 @@ async function startProxyServer() {
   return new Promise((resolve, reject) => {
     const server = app.listen(cfg.proxyPort, '0.0.0.0', () => {
       console.log(`[PROXY] Listening on http://0.0.0.0:${cfg.proxyPort}`);
-      console.log(`[PROXY] Forwarding to ${cfg.targetUrl}`);
+      console.log(`[PROXY] Forwarding to ${resolveTargetUrl(cfg.targetUrl)} (configured: ${cfg.targetUrl})`);
       resolve(server);
     });
     server.on('error', reject);

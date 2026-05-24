@@ -56,7 +56,7 @@ LM Studio itself stays on port `1234`. The proxy listens on `1235` (LM Studio + 
 |----------|---------|-------------|
 | `PROXY_PORT` | `1235` | Port the proxy listens on |
 | `ADMIN_PORT` | `8090` | Port for the web admin UI |
-| `LMSTUDIO_URL` | `http://host.docker.internal:1234` | LM Studio API endpoint |
+| `LMSTUDIO_URL` | `http://localhost:1234` | LM Studio API endpoint (see note below) |
 | `DEBUG` | `false` | Verbose request logging |
 | `CONFIG_DIR` | `/data` | Persistent config directory |
 
@@ -76,6 +76,8 @@ docker compose restart
 
 Settings persist in the `proxy-data` Docker volume across restarts.
 
+**Note on `localhost`:** The default target is `http://localhost:1234` because that's where LM Studio runs on your host. Inside the Docker container, `localhost` would normally mean the container itself — so the proxy automatically rewrites `localhost` / `127.0.0.1` to `host.docker.internal` when forwarding. You can keep `localhost:1234` in the admin UI.
+
 ### Docker Compose example
 
 ```yaml
@@ -88,7 +90,7 @@ services:
     environment:
       PROXY_PORT: 1235
       ADMIN_PORT: 8090
-      LMSTUDIO_URL: http://host.docker.internal:1234
+      LMSTUDIO_URL: http://localhost:1234
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -179,7 +181,11 @@ PROXY_PORT=1236 docker compose up -d
 
 **Can't reach LM Studio from container**
 
-Ensure LM Studio is running on the host and `LMSTUDIO_URL` is set to `http://host.docker.internal:1234`.
+Ensure LM Studio is running on the host at `http://localhost:1234`. The proxy rewrites this to `host.docker.internal` automatically inside Docker.
+
+**File path screenshots fail through Docker**
+
+Cline saves screenshots to your host temp folder (e.g. `C:\Users\...\AppData\Local\Temp\`). The container mounts this at `/host-temp` — ensure you're using `docker compose up` (not a plain `docker run` without the volume). Run `npm run test:e2e` to verify file-path vision works.
 
 ## Credits
 

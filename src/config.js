@@ -8,7 +8,7 @@ const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
 const DEFAULTS = {
   proxyPort: Number(process.env.PROXY_PORT) || 1235,
   adminPort: Number(process.env.ADMIN_PORT) || 8090,
-  targetUrl: process.env.LMSTUDIO_URL || 'http://host.docker.internal:1234',
+  targetUrl: process.env.LMSTUDIO_URL || 'http://localhost:1234',
   debug: process.env.DEBUG === 'true',
 };
 

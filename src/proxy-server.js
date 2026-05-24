@@ -1,6 +1,7 @@
 import express from 'express';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { processRequestBody } from './image-processor.js';
+import { resolveTargetUrl } from './target-url.js';
 
 export function createProxyApp(getConfig) {
   const app = express();
@@ -31,13 +32,14 @@ export function createProxyApp(getConfig) {
   });
 
   const proxy = createProxyMiddleware({
-    router: () => getConfig().targetUrl,
+    router: () => resolveTargetUrl(getConfig().targetUrl),
     changeOrigin: true,
     on: {
       proxyReq: (proxyReq, req) => {
         const cfg = getConfig();
+        const target = resolveTargetUrl(cfg.targetUrl);
         if (cfg.debug && req.body) {
-          console.log(`[PROXY] ${req.method} ${req.url} -> ${cfg.targetUrl}`);
+          console.log(`[PROXY] ${req.method} ${req.url} -> ${target}`);
         }
         if (req.body) {
           const bodyData = JSON.stringify(req.body);

@@ -1,7 +1,10 @@
 import { readFile } from 'fs/promises';
-import { extname, isAbsolute } from 'path';
+import { extname } from 'path';
 import { fileURLToPath } from 'url';
 import sharp from 'sharp';
+import { isFilePath, resolveHostImagePath } from './host-paths.js';
+
+export { isFilePath } from './host-paths.js';
 
 const MIME_TYPES = {
   '.png': 'image/png',
@@ -24,13 +27,6 @@ export async function convertImageToBase64(imagePath) {
 
   const base64Image = imageBuffer.toString('base64');
   return `data:${mimeType};base64,${base64Image}`;
-}
-
-export function isFilePath(str) {
-  if (!str || typeof str !== 'string') return false;
-  if (str.startsWith('data:')) return false;
-  if (str.startsWith('http://') || str.startsWith('https://')) return false;
-  return isAbsolute(str) || str.startsWith('./') || str.startsWith('../') || str.startsWith('file://');
 }
 
 export async function convertWebpDataUriToPng(imageUrl) {
@@ -67,7 +63,9 @@ export async function processImageUrl(imageUrl, { debug = false, log = console.l
       }
     }
 
-    if (debug) log(`[PROXY] Converting image path: ${imageUrl}`);
+    filePath = resolveHostImagePath(filePath);
+
+    if (debug) log(`[PROXY] Converting image path: ${imageUrl} -> ${filePath}`);
     const base64Uri = await convertImageToBase64(filePath);
     if (debug) log(`[PROXY] Converted path to base64 (${base64Uri.length} chars)`);
     return { url: base64Uri, converted: true };

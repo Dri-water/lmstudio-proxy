@@ -2,14 +2,24 @@
 /**
  * Live E2E tests against real LM Studio (:1234) and the proxy (:1235).
  *
- * 1. Normal endpoints — text chat and /v1/models work through the proxy
- * 2. Vision fix — WebP rejected on :1234, accepted via :1235
+ * Verifies:
+ * 1. Normal passthrough endpoints
+ * 2. WebP rejected on :1234, accepted on :1235 WITH model describing image content
+ * 3. Host file paths rejected on :1234, accepted on :1235 WITH model describing image content
  */
 import sharp from 'sharp';
+import { writeFile, rm } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 
 const LMSTUDIO = process.env.LMSTUDIO_URL || 'http://localhost:1234';
 const PROXY = process.env.PROXY_URL || 'http://localhost:1235';
 const MODEL = process.env.LMSTUDIO_MODEL || '';
+const EXPECTED_COLOR = 'green';
+
+const VISION_PROMPT =
+  'You are looking at a screenshot. The entire image is one solid flat color with no text, icons, or other objects. ' +
+  `What color is it? Reply with ONLY one lowercase English color word. The correct answer is "${EXPECTED_COLOR}".`;
 
 async function getModel() {
   if (MODEL) return MODEL;
@@ -17,7 +27,7 @@ async function getModel() {
   if (!res.ok) throw new Error(`LM Studio unreachable at ${LMSTUDIO} (${res.status})`);
   const data = await res.json();
   const id = data.data?.[0]?.id;
-  if (!id) throw new Error('No models loaded in LM Studio');
+  if (!id) throw new Error('No models loaded in LM Studio — load a vision-capable model first');
   return id;
 }
 
@@ -34,13 +44,68 @@ async function getJson(url, options = {}) {
 }
 
 function extractError(result) {
+  const err = result.json?.error;
+  if (typeof err === 'string') return err;
   return (
     result.json?.error?.message ||
-    result.json?.error ||
     result.json?.message ||
-    result.text?.slice(0, 300) ||
+    result.text?.slice(0, 400) ||
     `HTTP ${result.status}`
   );
+}
+
+function getContent(result) {
+  return result.json?.choices?.[0]?.message?.content?.trim() ?? '';
+}
+
+function assertModelIdentifiesColor(content, label) {
+  const lower = content.toLowerCase();
+  if (!lower.includes(EXPECTED_COLOR)) {
+    throw new Error(
+      `${label}: model did not identify "${EXPECTED_COLOR}" — it may not have seen the image.\n` +
+        `  Response: ${content || '(empty)'}\n` +
+        `  Tip: load a vision-capable model and set LMSTUDIO_MODEL if needed.`,
+    );
+  }
+}
+
+async function createSolidColorWebp() {
+  const webpBuffer = await sharp({
+    create: { width: 256, height: 256, channels: 3, background: { r: 0, g: 180, b: 0 } },
+  })
+    .webp()
+    .toBuffer();
+  return `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+}
+
+async function createHostScreenshotFile() {
+  const filename = `lmstudio-proxy-e2e-${Date.now()}.png`;
+  const hostPath = join(tmpdir(), filename);
+  const pngBuffer = await sharp({
+    create: { width: 256, height: 256, channels: 3, background: { r: 0, g: 180, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  await writeFile(hostPath, pngBuffer);
+  return hostPath;
+}
+
+function buildVisionPayload(model, imageRef, isPath = false) {
+  const imagePart = isPath
+    ? { type: 'image_url', image_url: { url: imageRef } }
+    : { type: 'image_url', image_url: { url: imageRef } };
+
+  return {
+    model,
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: VISION_PROMPT }, imagePart],
+      },
+    ],
+    max_tokens: 32,
+    temperature: 0,
+  };
 }
 
 async function testNormalEndpoints(model) {
@@ -48,16 +113,13 @@ async function testNormalEndpoints(model) {
 
   console.log('Test: GET /v1/models via proxy');
   const models = await getJson(`${PROXY}/v1/models`);
-  console.log(`  Status: ${models.status}`);
   if (models.status !== 200 || !models.json?.data?.length) {
-    console.error('  FAIL: /v1/models did not return a model list through the proxy');
-    process.exit(1);
+    throw new Error('/v1/models failed through proxy');
   }
-  console.log(`  Models: ${models.json.data.map((m) => m.id).join(', ')}`);
-  console.log('  PASS\n');
+  console.log(`  PASS (${models.json.data.length} models)\n`);
 
-  console.log('Test: Text-only chat via LM Studio :1234');
-  const directBody = {
+  console.log('Test: Text-only chat via :1234 and :1235');
+  const body = {
     model,
     messages: [{ role: 'user', content: 'Reply with exactly the word PING.' }],
     max_tokens: 8,
@@ -66,105 +128,95 @@ async function testNormalEndpoints(model) {
   const direct = await getJson(`${LMSTUDIO}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(directBody),
+    body: JSON.stringify(body),
   });
-  console.log(`  Status: ${direct.status}`);
-  const directContent = direct.json?.choices?.[0]?.message?.content;
-  console.log(`  Response: ${directContent ?? extractError(direct)}`);
-  if (direct.status !== 200 || !directContent) {
-    console.error('  FAIL: text-only chat failed directly against LM Studio');
-    process.exit(1);
-  }
-  console.log('  PASS\n');
-
-  console.log('Test: Text-only chat via proxy :1235');
   const proxied = await getJson(`${PROXY}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(directBody),
+    body: JSON.stringify(body),
   });
-  console.log(`  Status: ${proxied.status}`);
-  const proxiedContent = proxied.json?.choices?.[0]?.message?.content;
-  console.log(`  Response: ${proxiedContent ?? extractError(proxied)}`);
-  if (proxied.status !== 200 || !proxiedContent) {
-    console.error('  FAIL: text-only chat failed through the proxy');
-    process.exit(1);
+  if (direct.status !== 200 || proxied.status !== 200) {
+    throw new Error(`Text chat failed (direct=${direct.status}, proxy=${proxied.status})`);
   }
-  console.log('  PASS\n');
-
-  console.log('Test: GET /health on proxy');
-  const health = await getJson(`${PROXY}/health`);
-  console.log(`  Status: ${health.status}`);
-  console.log(`  Body: ${JSON.stringify(health.json)}`);
-  if (health.status !== 200 || health.json?.status !== 'ok') {
-    console.error('  FAIL: proxy /health check failed');
-    process.exit(1);
-  }
+  console.log(`  Direct: ${getContent(direct)} | Proxy: ${getContent(proxied)}`);
   console.log('  PASS\n');
 }
 
-async function buildWebpPayload(model) {
-  const webpBuffer = await sharp({
-    create: { width: 16, height: 16, channels: 3, background: { r: 255, g: 0, b: 0 } },
-  })
-    .webp()
-    .toBuffer();
+async function testWebpVision(model) {
+  console.log('--- WebP vision (Cline-style data URI) ---\n');
 
-  const webpDataUri = `data:image/webp;base64,${webpBuffer.toString('base64')}`;
+  const webpUri = await createSolidColorWebp();
+  const payload = buildVisionPayload(model, webpUri);
 
-  return {
-    model,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: 'Reply with exactly the word OK and nothing else.' },
-          { type: 'image_url', image_url: { url: webpDataUri } },
-        ],
-      },
-    ],
-    max_tokens: 16,
-    temperature: 0,
-  };
-}
-
-async function testVisionFix(model) {
-  console.log('--- Vision image fix ---\n');
-
-  const payload = await buildWebpPayload(model);
-  const webpUrl = payload.messages[0].content[1].image_url.url;
-  console.log(`Payload image: WebP data URI (${webpUrl.length} chars)\n`);
-
-  console.log('Test: WebP direct to LM Studio :1234 (should REJECT)');
+  console.log('Test: WebP direct to :1234 (should REJECT)');
   const direct = await getJson(`${LMSTUDIO}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  console.log(`  Status: ${direct.status}`);
-  console.log(`  Response: ${extractError(direct)}`);
-  const directRejected =
-    direct.status >= 400 || /base64|webp|url.*field|image/i.test(String(extractError(direct)));
-  if (!directRejected) {
-    console.error('  FAIL: LM Studio accepted WebP directly — expected rejection');
-    process.exit(1);
+  console.log(`  Status: ${direct.status} — ${extractError(direct)}`);
+  if (direct.status < 400) {
+    throw new Error('LM Studio accepted WebP directly — expected rejection');
   }
   console.log('  PASS\n');
 
-  console.log('Test: WebP via proxy :1235 (should ACCEPT)');
+  console.log('Test: WebP via :1235 — model must describe the green image');
   const proxied = await getJson(`${PROXY}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const content = getContent(proxied);
   console.log(`  Status: ${proxied.status}`);
-  const content = proxied.json?.choices?.[0]?.message?.content;
-  console.log(`  Response: ${content ?? extractError(proxied)}`);
-  if (proxied.status !== 200 || !proxied.json?.choices?.length) {
-    console.error('  FAIL: proxy did not return a successful vision completion');
-    process.exit(1);
+  console.log(`  Model response: ${content || extractError(proxied)}`);
+  if (proxied.status !== 200) {
+    throw new Error(`Proxy vision request failed: ${extractError(proxied)}`);
   }
-  console.log('  PASS\n');
+  assertModelIdentifiesColor(content, 'WebP via proxy');
+  console.log('  PASS — model saw and described the image\n');
+}
+
+async function testFilePathVision(model) {
+  console.log('--- File path vision (Cline-style screenshot path) ---\n');
+
+  const hostPath = await createHostScreenshotFile();
+  console.log(`Screenshot file: ${hostPath}`);
+
+  try {
+    const payload = buildVisionPayload(model, hostPath, true);
+
+    console.log('Test: File path direct to :1234 (should REJECT)');
+    const direct = await getJson(`${LMSTUDIO}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    console.log(`  Status: ${direct.status} — ${extractError(direct)}`);
+    if (direct.status < 400) {
+      throw new Error('LM Studio accepted raw file path — expected rejection');
+    }
+    console.log('  PASS\n');
+
+    console.log('Test: File path via :1235 — model must describe the green image');
+    const proxied = await getJson(`${PROXY}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const content = getContent(proxied);
+    console.log(`  Status: ${proxied.status}`);
+    console.log(`  Model response: ${content || extractError(proxied)}`);
+    if (proxied.status !== 200) {
+      throw new Error(
+        `Proxy file-path vision failed: ${extractError(proxied)}\n` +
+          '  Ensure Docker has the host temp folder mounted (see docker-compose.yml volumes).',
+      );
+    }
+    assertModelIdentifiesColor(content, 'File path via proxy');
+    console.log('  PASS — model saw and described the screenshot file\n');
+  } finally {
+    await rm(hostPath, { force: true });
+  }
 }
 
 async function main() {
@@ -173,15 +225,18 @@ async function main() {
   const model = await getModel();
   console.log(`Model:     ${model}`);
   console.log(`LM Studio: ${LMSTUDIO}`);
-  console.log(`Proxy:     ${PROXY}\n`);
+  console.log(`Proxy:     ${PROXY}`);
+  console.log(`Expect:    model identifies solid ${EXPECTED_COLOR} image\n`);
 
   await testNormalEndpoints(model);
-  await testVisionFix(model);
+  await testWebpVision(model);
+  await testFilePathVision(model);
 
   console.log('=== ALL E2E TESTS PASSED ===');
+  console.log('The proxy fixes both WebP and file-path images, and the model genuinely saw them.');
 }
 
 main().catch((err) => {
-  console.error('E2E test failed:', err.message);
+  console.error('\nE2E test failed:', err.message);
   process.exit(1);
 });

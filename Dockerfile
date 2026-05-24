@@ -12,7 +12,8 @@ COPY public ./public
 
 ENV PROXY_PORT=1235
 ENV ADMIN_PORT=8090
-ENV LMSTUDIO_URL=http://host.docker.internal:1234
+ENV LMSTUDIO_URL=http://localhost:1234
+ENV DOCKER=true
 ENV CONFIG_DIR=/data
 
 RUN mkdir -p /data

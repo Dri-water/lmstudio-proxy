@@ -6,14 +6,18 @@ services:
       # host:container — change the left side to expose on a different host port
       - "${PROXY_PORT:-1235}:1235"
       - "${ADMIN_PORT:-8090}:8090"
+    volumes:
+      - proxy-data:/data
+      # Cline/KiloCode save screenshots to the host temp dir — mount it read-only
+      - ${TEMP:-/tmp}:/host-temp:ro
     environment:
       # Fixed listen ports inside the container (must match the right side above)
       PROXY_PORT: "1235"
       ADMIN_PORT: "8090"
-      LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234}
+      LMSTUDIO_URL: ${LMSTUDIO_URL:-http://localhost:1234}
       DEBUG: ${DEBUG:-false}
-    volumes:
-      - proxy-data:/data
+      DOCKER: "true"
+      HOST_TEMP_MOUNT: /host-temp
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
