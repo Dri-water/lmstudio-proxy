@@ -50,13 +50,11 @@ LM Studio itself stays on port `1234`. The proxy listens on `1235` (LM Studio + 
 
 ### Cline in a devcontainer
 
-**Do not use `http://host.docker.internal:1235`** — on many setups (including Docker Desktop on Windows), other containers cannot reach published host ports that way. Requests never hit the proxy, so LM Studio never loads a model.
-
-Instead:
-
 1. Start the proxy on the host: `docker compose up -d`
-2. Join your devcontainer to the `lmstudio-proxy` network and shared screenshot volume — see [devcontainer.example.json](devcontainer.example.json)
-3. Point Cline at **`http://lmstudio-proxy:1235`** (the container name on the shared network)
+2. Join your devcontainer to the `lmstudio-proxy` network — see [devcontainer.example.json](devcontainer.example.json)
+3. Point Cline at one of:
+   - **`http://lmstudio-proxy:1235`** (recommended — uses the shared Docker network)
+   - **`http://host.docker.internal:1235`** (works once port conflicts are cleared — see below)
 
 For an **already running** devcontainer:
 
@@ -64,7 +62,7 @@ For an **already running** devcontainer:
 docker network connect lmstudio-proxy <your-devcontainer-name>
 ```
 
-Then set Cline base URL to `http://lmstudio-proxy:1235` and restart the Cline panel.
+Then set Cline base URL and restart the Cline panel.
 
 **Note:** LM Studio only loads a model into memory when a `chat/completions` request arrives — listing models or a failed connection will not show a loaded model.
 
@@ -186,6 +184,36 @@ Cline / KiloCode
 
 ## Troubleshooting
 
+### Port 1235 conflicts (read this first)
+
+Port **1235** is commonly used by the original [VSCode extension](https://github.com/amitrathiesh/lmstudio-proxy) and by VS Code Dev Containers auto-forwarding. If something else binds `127.0.0.1:1235`, requests from devcontainers via `host.docker.internal:1235` will **never reach this Docker proxy** — LM Studio won't load a model and nothing appears in proxy logs.
+
+**Two known conflicts:**
+
+| Conflict | What happens | How to fix |
+|----------|--------------|------------|
+| **Old VSCode extension** (`webzler.lmstudio-proxy`) | Extension process holds `127.0.0.1:1235` even after uninstall until VS Code fully quits | Uninstall extension, quit **all** VS Code windows (not just Cursor), reopen |
+| **VS Code Dev Containers port forward** | VS Code binds `127.0.0.1:1235` and forwards to devcontainer `:1234` — shows in **Ports** tab as `1234 → 1235` | VS Code → **Ports** tab → right-click the `1235` forward → **Stop Forwarding** |
+
+**Diagnose on Windows (PowerShell):**
+
+```powershell
+# Who is listening on 1235?
+Get-NetTCPConnection -LocalPort 1235 -State Listen | Select-Object LocalAddress, OwningProcess
+Get-Process -Id <OwningProcess>
+
+# Does the Docker proxy respond?
+Invoke-RestMethod http://127.0.0.1:1235/health   # should return {"status":"ok",...}
+```
+
+Expected when healthy: only **Docker** (`com.docker.backend`) on `0.0.0.0:1235`, and `127.0.0.1:1235/health` returns OK. If `127.0.0.1:1235` times out but `localhost:1235` works, VS Code is still squatting on the IPv4 address.
+
+**Alternative:** change the Docker proxy port to avoid all conflicts:
+
+```bash
+PROXY_PORT=1236 docker compose up -d
+```
+
 **Proxy won't start — port in use**
 
 ```bash
@@ -201,10 +229,11 @@ PROXY_PORT=1236 docker compose up -d
 
 **Cline in devcontainer — model never loads**
 
-1. Use `http://lmstudio-proxy:1235`, not `host.docker.internal:1235` (see devcontainer section above)
-2. Run `docker network connect lmstudio-proxy <devcontainer-name>` if you didn't set `runArgs` at build time
-3. Enable debug in admin UI and watch `docker compose logs -f` — you should see requests when Cline sends a message
-4. LM Studio only loads the model when a chat request succeeds — check the LM Studio server tab for incoming requests
+1. Check [port 1235 conflicts](#port-1235-conflicts-read-this-first) above first
+2. Use `http://lmstudio-proxy:1235` or `http://host.docker.internal:1235` (after conflicts cleared)
+3. Run `docker network connect lmstudio-proxy <devcontainer-name>` if not on the shared network
+4. Enable debug in admin UI and watch `docker compose logs -f` — you should see requests when Cline sends a message
+5. LM Studio only loads the model when a chat request succeeds — check the LM Studio server tab for incoming requests
 
 **Can't reach LM Studio from container**
 
