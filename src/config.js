@@ -37,6 +37,14 @@ export async function loadConfig() {
     await saveConfig();
   }
 
+  // Environment always wins for listen ports (matches Docker port mappings)
+  if (process.env.PROXY_PORT) config.proxyPort = Number(process.env.PROXY_PORT);
+  if (process.env.ADMIN_PORT) config.adminPort = Number(process.env.ADMIN_PORT);
+  if (process.env.LMSTUDIO_URL) config.targetUrl = process.env.LMSTUDIO_URL;
+  if (process.env.DEBUG !== undefined) config.debug = process.env.DEBUG === 'true';
+
+  await writeFile(CONFIG_PATH, JSON.stringify(config, null, 2));
+
   return getConfig();
 }
 

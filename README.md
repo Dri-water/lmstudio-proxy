@@ -132,6 +132,20 @@ npm test
 - **Bug 3**: String `image_url` → proper object structure
 - **Integration**: End-to-end proxy forwarding with a mock LM Studio server
 
+### Live E2E test (requires LM Studio running on :1234)
+
+Verifies normal passthrough **and** the vision fix (WebP rejected on `:1234`, accepted via proxy on `:1235`):
+
+```bash
+npm run test:e2e
+```
+
+Covers:
+- `GET /health` on the proxy
+- `GET /v1/models` through the proxy
+- Text-only `POST /v1/chat/completions` on `:1234` and `:1235`
+- WebP image conversion through the proxy
+
 ## Architecture
 
 ```

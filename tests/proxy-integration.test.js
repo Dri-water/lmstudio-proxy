@@ -17,12 +17,24 @@ describe('proxy integration', () => {
 
   before(async () => {
     mockLmStudio = http.createServer((req, res) => {
+      if (req.method === 'GET' && req.url === '/v1/models') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ object: 'list', data: [{ id: 'test-model', object: 'model' }] }));
+        return;
+      }
+
+      if (req.method === 'GET' && req.url === '/v1/models/other') {
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'not found' }));
+        return;
+      }
+
       let data = '';
       req.on('data', (chunk) => {
         data += chunk;
       });
       req.on('end', () => {
-        capturedBody = JSON.parse(data);
+        capturedBody = data ? JSON.parse(data) : null;
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ id: 'test', choices: [{ message: { content: 'ok' } }] }));
       });
@@ -53,6 +65,41 @@ describe('proxy integration', () => {
   after(async () => {
     await new Promise((r) => proxyServer.close(() => r()));
     await new Promise((r) => mockLmStudio.close(() => r()));
+  });
+
+  it('exposes /health without hitting LMStudio', async () => {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/health`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, 'ok');
+    assert.ok(body.targetUrl);
+  });
+
+  it('forwards GET /v1/models unchanged', async () => {
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/v1/models`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.object, 'list');
+    assert.equal(body.data[0].id, 'test-model');
+  });
+
+  it('forwards text-only chat/completions without modifying the body', async () => {
+    const requestBody = {
+      model: 'test-model',
+      messages: [{ role: 'user', content: 'Say hello in one word.' }],
+      max_tokens: 8,
+    };
+
+    const res = await fetch(`http://127.0.0.1:${proxyPort}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    assert.equal(res.status, 200);
+    assert.deepEqual(capturedBody, requestBody);
+    const body = await res.json();
+    assert.equal(body.choices[0].message.content, 'ok');
   });
 
   it('forwards chat/completions with file paths converted to base64 before reaching LMStudio', async () => {

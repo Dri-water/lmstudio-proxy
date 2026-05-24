@@ -3,11 +3,13 @@ services:
     build: .
     container_name: lmstudio-proxy
     ports:
-      - "${PROXY_PORT:-1235}:${PROXY_PORT:-1235}"
-      - "${ADMIN_PORT:-8090}:${ADMIN_PORT:-8090}"
+      # host:container — change the left side to expose on a different host port
+      - "${PROXY_PORT:-1235}:1235"
+      - "${ADMIN_PORT:-8090}:8090"
     environment:
-      PROXY_PORT: ${PROXY_PORT:-1235}
-      ADMIN_PORT: ${ADMIN_PORT:-8090}
+      # Fixed listen ports inside the container (must match the right side above)
+      PROXY_PORT: "1235"
+      ADMIN_PORT: "8090"
       LMSTUDIO_URL: ${LMSTUDIO_URL:-http://host.docker.internal:1234}
       DEBUG: ${DEBUG:-false}
     volumes:
